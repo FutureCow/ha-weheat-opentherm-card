@@ -3,10 +3,25 @@
  * Compact Lovelace card voor de weheat_opentherm custom integratie.
  *
  * Toont aanvoersetpoint, kamer-/buitentemperatuur, prijs en de opbouw
- * van de berekening (stooklijn + correcties).
+ * van de berekening (stooklijn + correcties). Optioneel: status van de
+ * warmtepomp en de watertemperatuur met de start-/stopgrens.
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.1.0";
+
+// States van de WeHeat status-sensor → weergavenaam.
+const PUMP_STATUS_LABELS = {
+  offline: "Offline",
+  standby: "Standby",
+  water_check: "Watercontrole",
+  heating: "Verwarmen",
+  cooling: "Koelen",
+  dhw: "Tapwater",
+  legionella_prevention: "Legionellapreventie",
+  defrosting: "Ontdooien",
+  self_test: "Zelftest",
+  manual_control: "Handmatig",
+};
 
 class WeheatOpenthermCard extends HTMLElement {
   static getStubConfig() {
@@ -27,6 +42,7 @@ class WeheatOpenthermCard extends HTMLElement {
       title: "WeHeat",
       show_breakdown: true,
       show_price: true,
+      pump_hysteresis: 3,
       ...config,
     };
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
@@ -48,6 +64,65 @@ class WeheatOpenthermCard extends HTMLElement {
     if (entity.state === "unavailable" || entity.state === "unknown") return null;
     const n = parseFloat(entity.state);
     return isNaN(n) ? null : n;
+  }
+
+  _entityNum(entityId) {
+    const entity = entityId ? this._hass?.states[entityId] : null;
+    if (!entity) return null;
+    const n = parseFloat(entity.state);
+    return isNaN(n) ? null : n;
+  }
+
+  _escape(text) {
+    return String(text).replace(
+      /[&<>"']/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    );
+  }
+
+  // Blok met pompstatus en watertemperatuur; leeg als er niets is ingesteld.
+  _pumpSection(setpoint) {
+    const statusId = this._config.pump_status_entity;
+    const waterId = this._config.pump_water_entity;
+    if (!statusId && !waterId) return "";
+
+    const rawStatus = statusId ? this._hass?.states[statusId]?.state : null;
+    const known = rawStatus && rawStatus !== "unavailable" && rawStatus !== "unknown";
+    const heating = rawStatus === "heating";
+    let statusCls = "neutral";
+    if (heating) statusCls = "positive";
+    else if (rawStatus === "cooling" || rawStatus === "defrosting") statusCls = "negative";
+    const statusLabel = known
+      ? this._escape(PUMP_STATUS_LABELS[rawStatus] ?? rawStatus)
+      : "–";
+
+    const water = this._entityNum(waterId);
+    const hyst = parseFloat(this._config.pump_hysteresis);
+
+    // De pomp start onder setpoint − hysterese en stopt boven setpoint + hysterese.
+    let limit = "";
+    if (waterId && setpoint !== null && !isNaN(hyst)) {
+      limit = heating
+        ? `stopt boven ${(setpoint + hyst).toFixed(1)}°C`
+        : `start onder ${(setpoint - hyst).toFixed(1)}°C`;
+    }
+
+    return `
+      <div class="divider"></div>
+      ${statusId
+        ? `<div class="row">
+            <span class="label">Warmtepomp</span>
+            <span class="value ${statusCls}">${statusLabel}</span>
+          </div>`
+        : ""}
+      ${waterId
+        ? `<div class="row">
+            <span class="label">Water huis in</span>
+            <span class="value neutral">${this._fmt(water)}°C</span>
+          </div>
+          ${limit ? `<div class="row hint"><span></span><span>${limit}</span></div>` : ""}`
+        : ""}
+    `;
   }
 
   _targetTemp() {
@@ -162,6 +237,11 @@ class WeheatOpenthermCard extends HTMLElement {
           font-size: 0.9em;
         }
         .row .label { color: var(--secondary-text-color); }
+        .row.hint {
+          padding-top: 0;
+          font-size: 0.8em;
+          color: var(--secondary-text-color);
+        }
         .row .value {
           font-variant-numeric: tabular-nums;
           font-feature-settings: "tnum";
@@ -208,6 +288,8 @@ class WeheatOpenthermCard extends HTMLElement {
               : ""}
           </div>
         </div>
+
+        ${this._pumpSection(setpoint)}
 
         ${showBreakdown
           ? `
