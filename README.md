@@ -2,6 +2,8 @@
 
 Compacte Lovelace-kaart voor de [weheat_opentherm](https://github.com/FutureCow/ha-setpoint-heating) custom integratie.
 
+Dit is een hobbyproject en geen product van WeHeat. "WeHeat OpenTherm" is de naam van de integratie waar de kaart bij hoort.
+
 Toont in één oogopslag:
 
 - Berekend **aanvoersetpoint** (groot, prominent)
@@ -15,27 +17,7 @@ Toont in één oogopslag:
 
 ## Screenshot
 
-```
-┌────────────────────────────────────┐
-│ WEHEAT                    27.5°C   │
-│                                    │
-│ KAMER             BUITEN           │
-│ 19.2°C            -2.1°C           │
-│ doel 20.0°C       €0.1842/kWh      │
-│ ─────────────────────────────────  │
-│ Warmtepomp              Standby    │
-│ Water huis in            24.1°C    │
-│                 start onder 24.5°C │
-│ ─────────────────────────────────  │
-│ Stooklijn               29.00°C    │
-│ Kamercompensatie        +1.60°C    │
-│ Windchill               +1.20°C    │
-│ Zon                     -0.00°C    │
-│ Prijs                   -2.00°C    │
-│ - - - - - - - - - - - - - - - - -  │
-│ = Aanvoersetpoint        29.80°C   │
-└────────────────────────────────────┘
-```
+![De kaart met setpoint, kamer- en buitentemperatuur, warmtepompstatus en de opbouw van de berekening](docs/screenshot.png)
 
 ## Installatie
 
