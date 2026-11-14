@@ -7,7 +7,22 @@
  * warmtepomp en de watertemperatuur met de start-/stopgrens.
  */
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.2.0";
+
+// Entity-ID's van de integratie volgen de taal die HA had bij het toevoegen.
+// Per sensor: Nederlandse en Engelse suffix; de eerste die bestaat telt.
+const SUFFIXES = {
+  setpoint: ["aanvoersetpoint", "supply_setpoint"],
+  outdoor: ["buitentemperatuur", "outdoor_temperature"],
+  room: ["kamertemperatuur", "room_temperature"],
+  curve: ["stooklijn_basistemperatuur", "heating_curve_base_temperature"],
+  roomComp: ["kamercompensatie", "room_compensation"],
+  windchill: ["windchill_correctie", "wind_chill_correction"],
+  sun: ["zoncorrectie", "sun_correction"],
+  price: ["prijscorrectie", "price_correction"],
+  priceNow: ["huidige_energieprijs", "current_energy_price"],
+  mode: ["actieve_modus", "active_mode"],
+};
 
 // States van de WeHeat status-sensor → weergavenaam.
 const PUMP_STATUS_LABELS = {
@@ -21,6 +36,7 @@ const PUMP_STATUS_LABELS = {
   defrosting: "Ontdooien",
   self_test: "Zelftest",
   manual_control: "Handmatig",
+  updating: "Bijwerken",
 };
 
 class WeheatOpenthermCard extends HTMLElement {
@@ -57,9 +73,18 @@ class WeheatOpenthermCard extends HTMLElement {
     return 3;
   }
 
-  _state(suffix) {
+  // Entiteit van de integratie; key uit SUFFIXES.
+  _entity(key) {
     if (!this._hass) return null;
-    const entity = this._hass.states[`${this._config.entity_prefix}_${suffix}`];
+    for (const suffix of SUFFIXES[key]) {
+      const entity = this._hass.states[`${this._config.entity_prefix}_${suffix}`];
+      if (entity) return entity;
+    }
+    return null;
+  }
+
+  _state(key) {
+    const entity = this._entity(key);
     if (!entity) return null;
     if (entity.state === "unavailable" || entity.state === "unknown") return null;
     const n = parseFloat(entity.state);
@@ -159,21 +184,31 @@ class WeheatOpenthermCard extends HTMLElement {
   _render() {
     if (!this._hass || !this._config) return;
 
-    const setpoint = this._state("aanvoersetpoint");
-    const outdoor = this._state("buitentemperatuur");
-    const room = this._state("kamertemperatuur");
-    const stooklijn = this._state("stooklijn_basistemperatuur");
-    const kamerComp = this._state("kamercompensatie");
-    const windchill = this._state("windchill_correctie");
-    const zon = this._state("zoncorrectie");
-    const prijs = this._state("prijscorrectie");
-    const priceNow = this._state("huidige_energieprijs");
+    const setpoint = this._state("setpoint");
+    const outdoor = this._state("outdoor");
+    const room = this._state("room");
+    const stooklijn = this._state("curve");
+    const kamerComp = this._state("roomComp");
+    const windchill = this._state("windchill");
+    const zon = this._state("sun");
+    const prijs = this._state("price");
+    const priceNow = this._state("priceNow");
     const target = this._targetTemp();
 
-    const showPrice = this._config.show_price && priceNow !== null;
+    // Verwarming uit (handmatig of door de stookgrens): er is dan geen
+    // setpoint en de correcties staan op 0.
+    const isOff = this._entity("mode")?.state === "off";
+    const attrs = this._entity("setpoint")?.attributes ?? {};
+    // Tekst als een temperatuursensor is weggevallen (integratie v2.5.0+).
+    const fallback = attrs.terugval ? this._escape(attrs.terugval) : "";
+    const clamped = attrs.begrensd === true;
+
+    // Bij "uit" meldt de integratie prijs 0; die niet tonen.
+    const showPrice = this._config.show_price && priceNow !== null && !isOff;
+
     const showBreakdown = this._config.show_breakdown;
 
-    this.shadowRoot.innerHTML = `
+    const html = `
       <style>
         :host { --positive: #ff9800; --negative: #039be5; }
         ha-card {
@@ -257,6 +292,15 @@ class WeheatOpenthermCard extends HTMLElement {
           justify-content: space-between;
           font-size: 0.85em;
         }
+        .warning {
+          margin-bottom: 8px;
+          padding: 6px 8px;
+          border-radius: 6px;
+          font-size: 0.85em;
+          color: var(--primary-text-color);
+          background: rgba(255, 152, 0, 0.18);
+        }
+        .setpoint.off { color: var(--secondary-text-color); }
         .footer .label { color: var(--secondary-text-color); }
         .footer .value {
           font-weight: 500;
@@ -266,11 +310,15 @@ class WeheatOpenthermCard extends HTMLElement {
 
       <ha-card>
         <div class="header">
-          <span class="title">${this._config.title}</span>
-          <span class="setpoint">
-            ${this._fmt(setpoint)}<span class="unit">°C</span>
-          </span>
+          <span class="title">${this._escape(this._config.title)}</span>
+          ${isOff
+            ? `<span class="setpoint off">Uit</span>`
+            : `<span class="setpoint">
+                ${this._fmt(setpoint)}<span class="unit">°C</span>
+              </span>`}
         </div>
+
+        ${fallback ? `<div class="warning">Terugval: ${fallback}</div>` : ""}
 
         <div class="summary">
           <div class="stat">
@@ -291,7 +339,16 @@ class WeheatOpenthermCard extends HTMLElement {
 
         ${this._pumpSection(setpoint)}
 
-        ${showBreakdown
+        ${showBreakdown && isOff
+          ? `
+          <div class="divider"></div>
+          <div class="row">
+            <span class="label">Verwarming uit</span>
+            <span class="value neutral">geen setpoint</span>
+          </div>
+        `
+          : ""}
+        ${showBreakdown && !isOff
           ? `
           <div class="divider"></div>
           <div class="row">
@@ -303,13 +360,19 @@ class WeheatOpenthermCard extends HTMLElement {
           ${this._row("Zon", zon, { invert: true })}
           ${this._row("Prijs", prijs)}
           <div class="footer">
-            <span class="label">= Aanvoersetpoint</span>
+            <span class="label">= Aanvoersetpoint${clamped ? " (begrensd)" : ""}</span>
             <span class="value">${this._fmt(setpoint)}°C</span>
           </div>
         `
           : ""}
       </ha-card>
     `;
+
+    // HA roept deze functie bij elke statuswijziging in huis aan. Alleen
+    // opnieuw opbouwen als er voor deze kaart iets is veranderd.
+    if (html === this._lastHtml) return;
+    this._lastHtml = html;
+    this.shadowRoot.innerHTML = html;
   }
 }
 

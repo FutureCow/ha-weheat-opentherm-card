@@ -9,6 +9,9 @@ Toont in één oogopslag:
 - **Huidige energieprijs** (indien geconfigureerd)
 - **Status van de warmtepomp** en de **watertemperatuur** met start-/stopgrens (optioneel)
 - **Opbouw van de berekening**: stooklijn + alle correcties, kleur-gecodeerd
+- **Uit** als de verwarming uit staat (handmatig of door de stookgrens)
+- Een **waarschuwing** als een temperatuursensor is weggevallen en de integratie op een terugval rekent
+- **(begrensd)** als het setpoint op de minimale of maximale aanvoertemperatuur is afgekapt
 
 ## Screenshot
 
@@ -60,8 +63,8 @@ title: Verwarming
 show_breakdown: true
 show_price: true
 # Optioneel: status en watertemperatuur van de warmtepomp
-pump_status_entity: sensor.flint_p40_heat_pump
-pump_water_entity: sensor.flint_p40_heat_pump_watertemperatuur_huis_in
+pump_status_entity: sensor.<warmtepomp>_heat_pump
+pump_water_entity: sensor.<warmtepomp>_heat_pump_watertemperatuur_huis_in
 pump_hysteresis: 3
 ```
 
@@ -84,18 +87,21 @@ Stel je `pump_status_entity` en/of `pump_water_entity` in, dan verschijnt een ex
 
 De kaart leest automatisch de volgende suffixen onder `entity_prefix`:
 
-- `_aanvoersetpoint` — eindwaarde
+- `_aanvoersetpoint` — eindwaarde, met de attributen `terugval` en `begrensd`
 - `_buitentemperatuur`, `_kamertemperatuur` — inputs
 - `_stooklijn_basistemperatuur` — basis stooklijn
 - `_kamercompensatie`, `_windchill_correctie`, `_zoncorrectie`, `_prijscorrectie` — correctietermen
 - `_huidige_energieprijs` — actuele prijs
+- `_actieve_modus` — `heat` of `off`
 
 Ontbrekende sensoren worden stilletjes overgeslagen.
 
+**Engelstalige Home Assistant:** de integratie maakt de entity-ID's aan in de taal die HA had bij het toevoegen. De kaart herkent ook de Engelse namen (`_supply_setpoint`, `_outdoor_temperature`, `_active_mode` enzovoort); je hoeft daar niets voor in te stellen. Gebruik dan wel de Engelse climate-entiteit bij `target_temp_entity`: `climate.weheat_opentherm_heating_target`. De teksten op de kaart zelf zijn Nederlands.
+
 ## Vereisten
 
-- Home Assistant 2024.1 of nieuwer
-- De [weheat_opentherm](https://github.com/FutureCow/ha-setpoint-heating) integratie
+- Home Assistant 2024.11 of nieuwer
+- De [weheat_opentherm](https://github.com/FutureCow/ha-setpoint-heating) integratie. De waarschuwing bij sensoruitval werkt vanaf v2.5.0; met oudere versies blijft de rest van de kaart gewoon werken
 
 ## Licentie
 
